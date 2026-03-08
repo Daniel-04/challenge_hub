@@ -1,0 +1,237 @@
+{% extends 'base.html' %}
+
+{% block title %}Upload Challenge - ChallengeHub{% endblock %}
+
+{% block content %}
+<div class="upload-container">
+    <h2>Upload a New Challenge</h2>
+    <p>Share your programming puzzles with the community.</p>
+
+    {% if error %}
+    <div class="alert alert-error" style="background: rgba(220, 38, 38, 0.2); border: 1px solid #dc2626; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" class="upload-form" id="challengeForm">
+        {% csrf_token %}
+        <div class="form-group">
+            <label for="{{ form.title.id_for_label }}">Challenge Title</label>
+            {{ form.title }}
+        </div>
+        
+        <div class="form-group">
+            <label for="{{ form.description.id_for_label }}">Problem Description (Markdown Supported)</label>
+            {{ form.description }}
+            <small>Describe the inputs, expected outputs, constraints, and provide examples clearly.</small>
+        </div>
+
+        <h3 style="margin-top: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">Test Cases</h3>
+        <p style="color: var(--text-muted); font-size: 0.9rem;">Add test cases for your problem. You must have at least 1 public (non-hidden) test case.</p>
+        
+        <div id="testcases-container">
+            <!-- Test case 1 is rendered by default -->
+            <div class="testcase-card" id="tc-1">
+                <div class="tc-header">
+                    <h4>Test Case 1</h4>
+                </div>
+                
+                <div class="tc-body">
+                    <div class="tc-row">
+                        <div class="tc-col">
+                            <label>Input Text</label>
+                            <div class="mutual-exclusive-group">
+                                <textarea name="input_text_1" class="form-input me-textarea" rows="3" maxlength="2000" placeholder="Paste input data here (max 2000 chars)..." oninput="toggleME(this, 'textarea')"></textarea>
+                                <label>OR Input File</label>
+                                <label class="file-upload-btn me-file-btn">
+                                    <span>📁 Choose File</span>
+                                    <input type="file" name="input_file_1" class="me-file" style="display: none;" onchange="toggleME(this, 'file'); this.parentElement.querySelector('span').textContent = '📁 ' + this.files[0].name">
+                                </label>
+                            </div>
+                        </div>
+                        <div class="tc-col">
+                            <label>Expected Output Text</label>
+                            <div class="mutual-exclusive-group">
+                                <textarea name="output_text_1" class="form-input me-textarea" rows="3" maxlength="2000" placeholder="Paste expected output here (max 2000 chars)..." oninput="toggleME(this, 'textarea')"></textarea>
+                                <label>OR Output File</label>
+                                <label class="file-upload-btn me-file-btn">
+                                    <span>📁 Choose File</span>
+                                    <input type="file" name="output_file_1" class="me-file" style="display: none;" onchange="toggleME(this, 'file'); this.parentElement.querySelector('span').textContent = '📁 ' + this.files[0].name">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tc-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="is_hidden_1" value="on">
+                            Hide output from users? (Hidden test case)
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="button" id="add-testcase-btn" class="btn-secondary" style="margin-bottom: 2rem;">+ Add Another Test Case</button>
+        <input type="hidden" name="num_testcases" id="num_testcases" value="1">
+
+        <button type="submit" class="btn-primary form-submit">Submit Challenge</button>
+    </form>
+</div>
+
+<script>
+    let tcCount = 1;
+    document.getElementById('add-testcase-btn').addEventListener('click', function() {
+        tcCount++;
+        document.getElementById('num_testcases').value = tcCount;
+        
+        const container = document.getElementById('testcases-container');
+        const tcHtml = `
+            <div class="testcase-card" id="tc-${tcCount}">
+                <div class="tc-header">
+                    <h4>Test Case ${tcCount}</h4>
+                    <button type="button" class="btn-danger btn-sm" onclick="removeTC(${tcCount})">Remove</button>
+                </div>
+                <div class="tc-body">
+                    <div class="tc-row">
+                        <div class="tc-col">
+                            <label>Input Text</label>
+                            <div class="mutual-exclusive-group">
+                                <textarea name="input_text_${tcCount}" class="form-input me-textarea" rows="3" maxlength="2000" placeholder="Paste input data here (max 2000 chars)..." oninput="toggleME(this, 'textarea')"></textarea>
+                                <label>OR Input File</label>
+                                <label class="file-upload-btn me-file-btn">
+                                    <span>📁 Choose File</span>
+                                    <input type="file" name="input_file_${tcCount}" class="me-file" style="display: none;" onchange="toggleME(this, 'file'); this.parentElement.querySelector('span').textContent = '📁 ' + this.files[0].name">
+                                </label>
+                            </div>
+                        </div>
+                        <div class="tc-col">
+                            <label>Expected Output Text</label>
+                            <div class="mutual-exclusive-group">
+                                <textarea name="output_text_${tcCount}" class="form-input me-textarea" rows="3" maxlength="2000" placeholder="Paste expected output here (max 2000 chars)..." oninput="toggleME(this, 'textarea')"></textarea>
+                                <label>OR Output File</label>
+                                <label class="file-upload-btn me-file-btn">
+                                    <span>📁 Choose File</span>
+                                    <input type="file" name="output_file_${tcCount}" class="me-file" style="display: none;" onchange="toggleME(this, 'file'); this.parentElement.querySelector('span').textContent = '📁 ' + this.files[0].name">
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tc-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="is_hidden_${tcCount}" value="on">
+                            Hide output from users? (Hidden test case)
+                        </label>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', tcHtml);
+    });
+
+    function removeTC(id) {
+        const tc = document.getElementById(`tc-${id}`);
+        if(tc) tc.remove();
+    }
+
+    // Mutual exclusivity between textarea and file upload
+    function toggleME(el, type) {
+        const group = el.closest('.mutual-exclusive-group');
+        if (!group) return;
+        const textarea = group.querySelector('.me-textarea');
+        const fileBtn = group.querySelector('.me-file-btn');
+        const fileInput = group.querySelector('.me-file');
+
+        if (type === 'textarea') {
+            if (textarea.value.trim().length > 0) {
+                fileBtn.classList.add('disabled');
+                fileInput.disabled = true;
+            } else {
+                fileBtn.classList.remove('disabled');
+                fileInput.disabled = false;
+            }
+        } else if (type === 'file') {
+            if (fileInput.files.length > 0) {
+                textarea.disabled = true;
+                textarea.classList.add('disabled');
+            }
+        }
+    }
+</script>
+
+<style>
+    .testcase-card {
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px dashed #334155;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+        padding: 1rem 1.5rem;
+    }
+    .tc-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 0.5rem;
+    }
+    .tc-header h4 { margin: 0; }
+    .tc-row {
+        display: flex;
+        gap: 1.5rem;
+    }
+    .tc-col {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .tc-col label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-top: 0.5rem;
+    }
+    .tc-options {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .btn-danger {
+        background: rgba(220, 38, 38, 0.2);
+        color: #ef4444;
+        border: 1px solid rgba(220, 38, 38, 0.3);
+        padding: 0.3rem 0.6rem;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+    }
+    /* Styled file upload button */
+    .file-upload-btn {
+        display: inline-block;
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--primary);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+    .file-upload-btn:hover {
+        background: rgba(59, 130, 246, 0.2);
+        border-color: rgba(59, 130, 246, 0.5);
+    }
+    .file-upload-btn.disabled {
+        opacity: 0.3;
+        pointer-events: none;
+    }
+    textarea.disabled, textarea:disabled {
+        opacity: 0.3;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
