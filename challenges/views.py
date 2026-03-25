@@ -15,6 +15,7 @@ from .models import (
     DIFFICULTY_LABELS,
 )
 from .forms import ChallengeForm
+from challenge_app.moderation import check_moderation
 
 MAX_PREVIEW_CHARS = 2000
 
@@ -42,7 +43,7 @@ def _read_file_preview(file_field):
 
 
 # TODO: figure out how to be less suceptible to malicious usage?
-# TODO: - proof of work before giving out session key? (would be fine for views/ratings, but what about comments in discussion?)
+# TODO: - proof of work before giving out session key?
 # TODO: - ???
 def _get_session_key(request):
     if not request.session.session_key:
@@ -221,18 +222,29 @@ def challenge_upload(request):
             if not error_msg:
                 try:
                     with transaction.atomic():
-                        challenge = form.save()
-                        for tc in parsed_tcs:
-                            TestCase.objects.create(
-                                challenge=challenge,
-                                number=tc["number"],
-                                input_text=tc["input_text"],
-                                input_file=tc["input_file"],
-                                output_text=tc["output_text"],
-                                output_file=tc["output_file"],
-                                is_hidden=tc["is_hidden"],
-                            )
-                        return redirect("challenge_list")
+                        challenge = form.save(commit=False)
+
+                        # Moderation check
+                        challenge_text = f"{challenge.title}\n\n{challenge.description}"
+                        mod_result = check_moderation(
+                            challenge_text,
+                            topic_context="this is a programming challenge board",
+                        )
+                        if mod_result["status"] != "pass":
+                            error_msg = f"Submission rejected by Moderation API: {mod_result.get('reason', 'Unknown reason')} (Status: {mod_result['status']})"
+                        else:
+                            challenge.save()
+                            for tc in parsed_tcs:
+                                TestCase.objects.create(
+                                    challenge=challenge,
+                                    number=tc["number"],
+                                    input_text=tc["input_text"],
+                                    input_file=tc["input_file"],
+                                    output_text=tc["output_text"],
+                                    output_file=tc["output_file"],
+                                    is_hidden=tc["is_hidden"],
+                                )
+                            return redirect("challenge_list")
                 except Exception as e:
                     error_msg = f"An error occurred while saving: {str(e)}"
     else:
@@ -367,11 +379,28 @@ def challenge_comment(request, pk):
         nickname = request.POST.get("nickname", "").strip() or "Anonymous"
         if text:
             challenge = get_object_or_404(Challenge, pk=pk)
+
+            # Moderation check
+            mod_result = check_moderation(
+                text, topic_context=f"{challenge.title}\n\n{challenge.description}"
+            )
+            if mod_result["status"] in ["delete", "inspect", "flagged_for_toxicity"]:
+                messages.error(
+                    request,
+                    f"Comment rejected by moderation: {mod_result.get('reason', 'Unknown reason')}",
+                )
+                return HttpResponseRedirect(
+                    reverse("challenge_detail", args=[pk]) + "#discussion"
+                )
+
+            is_off_topic = mod_result["status"] == "flagged_for_off_topic"
+
             Comment.objects.create(
                 session_key=session_key,
                 challenge=challenge,
                 text=text,
                 nickname=nickname,
+                is_off_topic=is_off_topic,
             )
             messages.success(request, "Your comment has been posted.")
     return HttpResponseRedirect(reverse("challenge_detail", args=[pk]) + "#discussion")

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  moderation-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.moderation
+    ports:
+      - "8000:8000"
+    environment:
+      - THRESHOLD_PASS=0.70
+      - THRESHOLD_DELETE=0.70
+
+  challenge-hub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - MODERATION_API_URL=http://moderation-api:8000/moderate
+    depends_on:
+      - moderation-api
