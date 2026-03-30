@@ -2,11 +2,16 @@
 
 {% block title %}{{ challenge.title }} - ChallengeHub{% endblock %}
 
-{% block content %}
-<!-- Markdown, MathJax, and Highlight.js scripts -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+{% block extra_head %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<!-- Markdown and Highlight.js scripts (deferred) -->
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" defer></script>
+
+{% if needs_mathjax %}
 <script>
     MathJax = {
         tex: {
@@ -17,6 +22,7 @@
     };
 </script>
 <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+{% endif %}
 
 {% if messages %}
 <div class="messages" style="max-width: 800px; margin: 0 auto 1.5rem auto;">

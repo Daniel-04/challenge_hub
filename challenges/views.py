@@ -1,3 +1,5 @@
+import re
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.http import HttpResponse, HttpResponseRedirect
@@ -18,6 +20,18 @@ from .forms import ChallengeForm
 from challenge_app.moderation import check_moderation
 
 MAX_PREVIEW_CHARS = 2000
+
+MATHJAX_PATTERN = re.compile(r'(\$\$?[^$]+\$\$?|\\\(|\\\[)')
+
+
+def _needs_mathjax(challenge, comments):
+    """Check if any content contains math delimiters requiring MathJax."""
+    if MATHJAX_PATTERN.search(challenge.description):
+        return True
+    for c in comments:
+        if MATHJAX_PATTERN.search(c.text):
+            return True
+    return False
 
 
 def _read_file_preview(file_field):
@@ -172,6 +186,7 @@ def challenge_detail(request, pk):
             "has_rated": has_rated,
             "has_voted_diff": has_voted_diff,
             "difficulty_labels": DIFFICULTY_LABELS,
+            "needs_mathjax": _needs_mathjax(challenge, comments),
         },
     )
 
