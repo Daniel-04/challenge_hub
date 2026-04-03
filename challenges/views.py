@@ -2,10 +2,15 @@ import re
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
-from django.http import HttpResponse, HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
 from django.db import transaction
-from django.db.models import Count, Avg, Q
+from django.db.models import Count, Avg, Q, F, Sum, FloatField, ExpressionWrapper
+from django.db.models.functions import Coalesce, NullIf
 from django.contrib import messages
+from django.core import signing
+import time
+import uuid
+import hashlib
 from .models import (
     Challenge,
     TestCase,
@@ -21,7 +26,7 @@ from challenge_app.moderation import check_moderation
 
 MAX_PREVIEW_CHARS = 2000
 
-MATHJAX_PATTERN = re.compile(r'(\$\$?[^$]+\$\$?|\\\(|\\\[)')
+MATHJAX_PATTERN = re.compile(r"(\$\$?[^$]+\$\$?|\\\(|\\\[)")
 
 
 def _needs_mathjax(challenge, comments):
@@ -56,13 +61,29 @@ def _read_file_preview(file_field):
     return None
 
 
-# TODO: figure out how to be less suceptible to malicious usage?
-# TODO: - proof of work before giving out session key?
-# TODO: - ???
-def _get_session_key(request):
-    if not request.session.session_key:
-        request.session.create()
-    return request.session.session_key
+def get_user_weight(request):
+    """Weight based on session age and solves."""
+    created_at = request.session.get("created_at")
+    if not created_at:
+        return 0.0
+
+    time_alive = time.time() - float(created_at)
+    if time_alive < 600:
+        return 0.0
+
+    session_key = request.session.session_key
+    if not session_key:
+        return 0.0
+
+    solves = Solve.objects.filter(session_key=session_key).count()
+    if solves == 0:
+        return 0.0
+    elif solves == 1:
+        return 0.5
+    elif solves == 2:
+        return 0.8
+    else:
+        return 1.0
 
 
 def challenge_list(request):
@@ -71,12 +92,45 @@ def challenge_list(request):
     min_diff = request.GET.get("min_diff", "")
     max_diff = request.GET.get("max_diff", "")
     min_stars = request.GET.get("min_stars", "")
+    show_completed = request.GET.get("show_completed")
+
+    weight_sum_stars = Coalesce(Sum("ratings__weight"), 0.0, output_field=FloatField())
+    weight_sum_diff = Coalesce(
+        Sum("difficulty_votes__weight"), 0.0, output_field=FloatField()
+    )
+
+    avg_stars_expr = ExpressionWrapper(
+        Coalesce(
+            Sum(F("ratings__stars") * F("ratings__weight"), output_field=FloatField()),
+            0.0,
+        )
+        / NullIf(weight_sum_stars, 0.0),
+        output_field=FloatField(),
+    )
+    avg_diff_expr = ExpressionWrapper(
+        Coalesce(
+            Sum(
+                F("difficulty_votes__difficulty") * F("difficulty_votes__weight"),
+                output_field=FloatField(),
+            ),
+            0.0,
+        )
+        / NullIf(weight_sum_diff, 0.0),
+        output_field=FloatField(),
+    )
 
     challenges = Challenge.objects.annotate(
         solves_count=Count("solves", distinct=True),
-        avg_stars=Avg("ratings__stars"),
-        avg_diff=Avg("difficulty_votes__difficulty"),
+        avg_stars=avg_stars_expr,
+        avg_diff=avg_diff_expr,
     )
+
+    session_key = request.session.session_key
+    if session_key:
+        if show_completed == "1":
+            challenges = challenges.filter(solves__session_key=session_key)
+        else:
+            challenges = challenges.exclude(solves__session_key=session_key)
 
     # Search filter
     if search_q:
@@ -124,21 +178,23 @@ def challenge_list(request):
             "min_diff": min_diff,
             "max_diff": max_diff,
             "min_stars": min_stars,
+            "show_completed": show_completed,
         },
     )
 
 
 def challenge_detail(request, pk):
     challenge = get_object_or_404(Challenge, pk=pk)
-    session_key = _get_session_key(request)
+    session_key = request.session.session_key
 
     # Unique view tracking
-    _, created = ChallengeView.objects.get_or_create(
-        challenge=challenge, session_key=session_key
-    )
-    if created:
-        challenge.views += 1
-        challenge.save(update_fields=["views"])
+    if session_key:
+        _, created = ChallengeView.objects.get_or_create(
+            challenge=challenge, session_key=session_key
+        )
+        if created:
+            challenge.views += 1
+            challenge.save(update_fields=["views"])
 
     public_tests = challenge.testcases.filter(is_hidden=False)
     hidden_tests = challenge.testcases.filter(is_hidden=True)
@@ -152,21 +208,23 @@ def challenge_detail(request, pk):
     public_tests = [enrich(tc) for tc in public_tests]
     hidden_tests_list = [enrich(tc) for tc in hidden_tests]
 
-    is_solved = challenge.solves.filter(session_key=session_key).exists()
-
-    if not hidden_tests.exists():
-        is_solved = True
+    is_solved = False
+    if session_key:
+        is_solved = challenge.solves.filter(session_key=session_key).exists()
 
     show_spoilers = request.GET.get("spoilers") == "1"
     comments = challenge.comments.all()
 
     # Check if user already rated/voted
-    has_rated = Rating.objects.filter(
-        session_key=session_key, challenge=challenge
-    ).exists()
-    has_voted_diff = DifficultyVote.objects.filter(
-        session_key=session_key, challenge=challenge
-    ).exists()
+    has_rated = False
+    has_voted_diff = False
+    if session_key:
+        has_rated = Rating.objects.filter(
+            session_key=session_key, challenge=challenge
+        ).exists()
+        has_voted_diff = DifficultyVote.objects.filter(
+            session_key=session_key, challenge=challenge
+        ).exists()
 
     # Solved test cases from session
     solved_tcs = request.session.get(f"solved_tcs_{pk}", [])
@@ -192,6 +250,10 @@ def challenge_detail(request, pk):
 
 
 def challenge_upload(request):
+    if not request.session.session_key:
+        messages.error(request, "You must request a session before uploading.")
+        return redirect("challenge_list")
+
     error_msg = None
     if request.method == "POST":
         form = ChallengeForm(request.POST)
@@ -274,7 +336,10 @@ def challenge_submit(request, pk):
     if request.method != "POST":
         return redirect("challenge_detail", pk=pk)
 
-    session_key = _get_session_key(request)
+    session_key = request.session.session_key
+    if not session_key:
+        messages.error(request, "You must request a session to submit.")
+        return redirect("challenge_detail", pk=pk)
     challenge = get_object_or_404(Challenge, pk=pk)
     hidden_tests = challenge.testcases.filter(is_hidden=True)
 
@@ -355,17 +420,48 @@ def challenge_submit(request, pk):
     return HttpResponseRedirect(reverse("challenge_detail", args=[pk]) + "#submit")
 
 
-# TODO: maybe sessions with more solved challenges get more weight in their votes?
-# TODO: or some ELO system?
+def challenge_mark_completed(request, pk):
+    if request.method == "POST":
+        session_key = request.session.session_key
+        if not session_key:
+            messages.error(
+                request, "You must request a session to mark challenges as completed."
+            )
+            return redirect("challenge_detail", pk=pk)
+
+        challenge = get_object_or_404(Challenge, pk=pk)
+
+        if challenge.testcases.filter(is_hidden=True).exists():
+            messages.error(
+                request,
+                "This challenge has hidden test cases and must be solved by submitting an answer.",
+            )
+            return redirect("challenge_detail", pk=pk)
+
+        Solve.objects.get_or_create(session_key=session_key, challenge=challenge)
+        messages.success(request, "Challenge marked as completed!")
+        return redirect("challenge_detail", pk=pk)
+
+    return redirect("challenge_list")
+
+
+# Vote weights depend on user solves / session time
 @transaction.atomic
 def challenge_rate(request, pk):
     if request.method == "POST":
-        session_key = _get_session_key(request)
+        session_key = request.session.session_key
+        if not session_key:
+            messages.error(request, "You must request a session to rate.")
+            return redirect("challenge_detail", pk=pk)
+
         stars = int(request.POST.get("stars", 0))
         if 1 <= stars <= 5:
             challenge = get_object_or_404(Challenge, pk=pk)
+            weight = get_user_weight(request)
             Rating.objects.update_or_create(
-                session_key=session_key, challenge=challenge, defaults={"stars": stars}
+                session_key=session_key,
+                challenge=challenge,
+                defaults={"stars": stars, "weight": weight},
             )
             messages.success(request, "Your rating has been saved.")
     return HttpResponseRedirect(reverse("challenge_detail", args=[pk]) + "#community")
@@ -374,14 +470,19 @@ def challenge_rate(request, pk):
 @transaction.atomic
 def challenge_difficulty(request, pk):
     if request.method == "POST":
-        session_key = _get_session_key(request)
+        session_key = request.session.session_key
+        if not session_key:
+            messages.error(request, "You must request a session to vote on difficulty.")
+            return redirect("challenge_detail", pk=pk)
+
         diff = int(request.POST.get("difficulty", 0))
         if 1 <= diff <= 10:
             challenge = get_object_or_404(Challenge, pk=pk)
+            weight = get_user_weight(request)
             DifficultyVote.objects.update_or_create(
                 session_key=session_key,
                 challenge=challenge,
-                defaults={"difficulty": diff},
+                defaults={"difficulty": diff, "weight": weight},
             )
             messages.success(request, "Your difficulty vote has been saved.")
     return HttpResponseRedirect(reverse("challenge_detail", args=[pk]) + "#community")
@@ -389,7 +490,11 @@ def challenge_difficulty(request, pk):
 
 def challenge_comment(request, pk):
     if request.method == "POST":
-        session_key = _get_session_key(request)
+        session_key = request.session.session_key
+        if not session_key:
+            messages.error(request, "You must request a session to comment.")
+            return redirect("challenge_detail", pk=pk)
+
         text = request.POST.get("text", "").strip()
         nickname = request.POST.get("nickname", "").strip() or "Anonymous"
         if text:
@@ -453,3 +558,73 @@ def testcase_download(request, tc_id, which):
     response = HttpResponse(content, content_type="application/octet-stream")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+def session_pow_challenge(request):
+    """Provides a token and challenge salt for PoW"""
+    diff_chars = 5  # 5 leading zeros in SHA256 hex result
+    challenge_data = {"salt": uuid.uuid4().hex, "ts": time.time(), "diff": diff_chars}
+    token = signing.dumps(challenge_data)
+    return JsonResponse(
+        {"token": token, "salt": challenge_data["salt"], "diff": diff_chars}
+    )
+
+
+def session_pow_solve(request):
+    """Verifies PoW and creates session"""
+    token = request.POST.get("token")
+    nonce = request.POST.get("nonce")
+
+    if not token or not nonce:
+        return JsonResponse({"error": "Missing token or nonce"}, status=400)
+
+    try:
+        data = signing.loads(token, max_age=300)  # Valid for 5 minutes
+    except signing.SignatureExpired:
+        return JsonResponse({"error": "Challenge expired"}, status=400)
+    except signing.BadSignature:
+        return JsonResponse({"error": "Invalid challenge"}, status=400)
+
+    salt = data["salt"]
+    diff = data["diff"]
+
+    hash_input = f"{salt}{nonce}".encode("utf-8")
+    h = hashlib.sha256(hash_input).hexdigest()
+    if not h.startswith("0" * diff):
+        return JsonResponse({"error": "Invalid Proof of Work"}, status=400)
+
+    if not request.session.session_key:
+        request.session.create()
+    request.session["created_at"] = time.time()
+
+    return JsonResponse({"success": True})
+
+
+def session_export(request):
+    if not request.session.session_key:
+        return HttpResponse("No session found", status=400)
+    response = HttpResponse(request.session.session_key, content_type="text/plain")
+    response["Content-Disposition"] = 'attachment; filename="challenge_hub_session.txt"'
+    return response
+
+
+def session_import(request):
+    if request.method == "POST":
+        key = request.POST.get("session_key_text", "").strip()
+        if not key and "session_key_file" in request.FILES:
+            try:
+                key = request.FILES["session_key_file"].read().decode("utf-8").strip()
+            except Exception:
+                pass
+
+        if key:
+            # We simply set the session cookie to the provided string
+            from django.conf import settings
+
+            response = redirect("challenge_list")
+            response.set_cookie(settings.SESSION_COOKIE_NAME, key)
+            messages.success(request, "Session imported successfully.")
+            return response
+
+        messages.error(request, "Invalid or empty session key provided.")
+    return redirect("challenge_list")

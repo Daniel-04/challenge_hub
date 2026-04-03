@@ -77,6 +77,7 @@ class Rating(models.Model):
         Challenge, related_name="ratings", on_delete=models.CASCADE
     )
     stars = models.PositiveIntegerField(choices=[(i, str(i)) for i in range(1, 6)])
+    weight = models.FloatField(default=1.0)
 
     class Meta:
         unique_together = ("session_key", "challenge")
@@ -104,6 +105,7 @@ class DifficultyVote(models.Model):
     difficulty = models.PositiveIntegerField(
         choices=[(i, DIFFICULTY_LABELS[i]) for i in range(1, 11)]
     )
+    weight = models.FloatField(default=1.0)
 
     class Meta:
         unique_together = ("session_key", "challenge")

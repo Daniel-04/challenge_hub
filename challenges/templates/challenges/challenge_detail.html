@@ -24,16 +24,6 @@
 <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
 {% endif %}
 
-{% if messages %}
-<div class="messages" style="max-width: 800px; margin: 0 auto 1.5rem auto;">
-    {% for message in messages %}
-    <div class="alert {{ message.tags }}" style="padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;
-        {% if message.tags == 'success' %}background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #10b981;{% else %}background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #f87171;{% endif %}">
-        {{ message }}
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
 
 <div class="challenge-detail">
     <div class="detail-header">
@@ -106,99 +96,126 @@
         <div id="submit" class="hidden-tests-section" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
             <h3>Submit Solution</h3>
             
-            {% if is_solved %}
-            <div style="background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; color: #10b981;">
-                ✅ You have successfully solved this challenge!
-            </div>
-            
-            <!-- Reveal hidden test cases after solve -->
-            <div style="margin-bottom: 1.5rem;">
-                <button type="button" class="btn-secondary" onclick="document.getElementById('solved-hidden-tcs').style.display = document.getElementById('solved-hidden-tcs').style.display === 'none' ? 'block' : 'none'">
-                    👁️ Show / Hide Hidden Test Cases
-                </button>
-                <div id="solved-hidden-tcs" style="display: none; margin-top: 1rem;">
-                    {% for tc in hidden_tests %}
-                    <div class="testcase-card" style="margin-bottom: 1rem;">
-                        <div class="tc-header">
-                            <h4>Hidden Test Case {{ tc.number }} (Revealed)</h4>
-                        </div>
-                        <div class="tc-body tc-row">
-                            <div class="tc-col">
-                                <strong>Input:</strong>
-                                <div class="tc-data-box">
-                                    {% if tc.input_preview %}
-                                        <pre>{{ tc.input_preview }}</pre>
-                                    {% elif tc.input_file %}
-                                        <a href="{{ tc.input_file.url }}" class="btn-download btn-sm mt-1">⬇ Download Input</a>
-                                    {% else %}
-                                        <i>No input</i>
-                                    {% endif %}
-                                </div>
-                                {% if tc.input_preview or tc.input_file %}
-                                <a href="{% url 'testcase_download' tc.id 'input' %}" class="btn-download-link">⬇ Download as file</a>
-                                {% endif %}
-                            </div>
-                            <div class="tc-col">
-                                <strong>Expected Output:</strong>
-                                <div class="tc-data-box">
-                                    {% if tc.output_preview %}
-                                        <pre>{{ tc.output_preview }}</pre>
-                                    {% elif tc.output_file %}
-                                        <a href="{{ tc.output_file.url }}" class="btn-download btn-sm mt-1">⬇ Download Output</a>
-                                    {% endif %}
-                                </div>
-                                <a href="{% url 'testcase_download' tc.id 'output' %}" class="btn-download-link">⬇ Download as file</a>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
+            {% if not request.session.session_key %}
+            <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; margin-bottom: 2rem; color: #93c5fd; font-size: 0.95rem;">
+                ℹ️ You must <strong>Request a Session</strong> (in the top right) to submit solutions.
             </div>
             {% else %}
-            <p style="color:var(--text-muted); margin-bottom: 1.5rem;">To fully solve this challenge, provide the correct outputs for the hidden test cases below.</p>
-            
-            <form method="post" action="{% url 'challenge_submit' challenge.pk %}" enctype="multipart/form-data">
-                {% csrf_token %}
-                <div class="testcases-list">
-                    {% for tc in hidden_tests %}
-                    <div class="testcase-card" style="margin-bottom: 1.5rem;">
-                        <div class="tc-header">
-                            <h4>Hidden Test Case {{ tc.number }} {% if tc.number in solved_tcs %}<span style="color: #10b981; margin-left: 0.5rem;">[✅ Solved]</span>{% endif %}</h4>
-                        </div>
-                        <div class="tc-body tc-row">
-                            <div class="tc-col">
-                                <strong>Input:</strong>
-                                <div class="tc-data-box">
-                                    {% if tc.input_preview %}
-                                        <pre>{{ tc.input_preview }}</pre>
-                                    {% elif tc.input_file %}
-                                        <a href="{{ tc.input_file.url }}" class="btn-download btn-sm mt-1">⬇ Download Input</a>
-                                    {% else %}
-                                        <i>No input</i>
-                                    {% endif %}
-                                </div>
-                                {% if tc.input_preview or tc.input_file %}
-                                <a href="{% url 'testcase_download' tc.id 'input' %}" class="btn-download-link">⬇ Download as file</a>
-                                {% endif %}
-                            </div>
-                            <div class="tc-col">
-                                <strong>Your Output:</strong>
-                                <div class="mutual-exclusive-group" style="margin-top: 0.5rem;">
-                                    <textarea name="solve_text_{{ tc.id }}" class="form-input me-textarea" rows="3" maxlength="2000" placeholder="Paste your output here (max 2000 chars)..." oninput="toggleME(this, 'textarea')"></textarea>
-                                    <div style="margin: 0.5rem 0; color: var(--text-muted); font-size: 0.85rem;">OR upload output file</div>
-                                    <label class="file-upload-btn me-file-btn">
-                                        <span>📁 Choose File</span>
-                                        <input type="file" name="solve_file_{{ tc.id }}" class="me-file" style="display: none;" onchange="toggleME(this, 'file'); this.parentElement.querySelector('span').textContent = '📁 ' + this.files[0].name">
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
+                {% if is_solved %}
+                <div style="background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; color: #10b981;">
+                    ✅ You have successfully solved this challenge!
                 </div>
                 
-                <button type="submit" class="btn-primary form-submit" style="margin-top: 1rem;">Submit Solution</button>
-            </form>
+                <!-- Reveal hidden test cases after solve -->
+                <div style="margin-bottom: 1.5rem;">
+                    <button type="button" class="btn-secondary" onclick="document.getElementById('solved-hidden-tcs').style.display = document.getElementById('solved-hidden-tcs').style.display === 'none' ? 'block' : 'none'">
+                        👁️ Show / Hide Hidden Test Cases
+                    </button>
+                    <div id="solved-hidden-tcs" style="display: none; margin-top: 1rem;">
+                        {% for tc in hidden_tests %}
+                        <div class="testcase-card" style="margin-bottom: 1rem;">
+                            <div class="tc-header">
+                                <h4>Hidden Test Case {{ tc.number }} (Revealed)</h4>
+                            </div>
+                            <div class="tc-body tc-row">
+                                <div class="tc-col">
+                                    <strong>Input:</strong>
+                                    <div class="tc-data-box">
+                                        {% if tc.input_preview %}
+                                            <pre>{{ tc.input_preview }}</pre>
+                                        {% elif tc.input_file %}
+                                            <a href="{{ tc.input_file.url }}" class="btn-download btn-sm mt-1">⬇ Download Input</a>
+                                        {% else %}
+                                            <i>No input</i>
+                                        {% endif %}
+                                    </div>
+                                    {% if tc.input_preview or tc.input_file %}
+                                    <a href="{% url 'testcase_download' tc.id 'input' %}" class="btn-download-link">⬇ Download as file</a>
+                                    {% endif %}
+                                </div>
+                                <div class="tc-col">
+                                    <strong>Expected Output:</strong>
+                                    <div class="tc-data-box">
+                                        {% if tc.output_preview %}
+                                            <pre>{{ tc.output_preview }}</pre>
+                                        {% elif tc.output_file %}
+                                            <a href="{{ tc.output_file.url }}" class="btn-download btn-sm mt-1">⬇ Download Output</a>
+                                        {% endif %}
+                                    </div>
+                                    <a href="{% url 'testcase_download' tc.id 'output' %}" class="btn-download-link">⬇ Download as file</a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <p style="color:var(--text-muted); margin-bottom: 1.5rem;">To fully solve this challenge, provide the correct outputs for the hidden test cases below.</p>
+                
+                <form method="post" action="{% url 'challenge_submit' challenge.pk %}" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <div class="testcases-list">
+                        {% for tc in hidden_tests %}
+                        <div class="testcase-card" style="margin-bottom: 1.5rem;">
+                            <div class="tc-header">
+                                <h4>Hidden Test Case {{ tc.number }} {% if tc.number in solved_tcs %}<span style="color: #10b981; margin-left: 0.5rem;">[✅ Solved]</span>{% endif %}</h4>
+                            </div>
+                            <div class="tc-body tc-row">
+                                <div class="tc-col">
+                                    <strong>Input:</strong>
+                                    <div class="tc-data-box">
+                                        {% if tc.input_preview %}
+                                            <pre>{{ tc.input_preview }}</pre>
+                                        {% elif tc.input_file %}
+                                            <a href="{{ tc.input_file.url }}" class="btn-download btn-sm mt-1">⬇ Download Input</a>
+                                        {% else %}
+                                            <i>No input</i>
+                                        {% endif %}
+                                    </div>
+                                    {% if tc.input_preview or tc.input_file %}
+                                    <a href="{% url 'testcase_download' tc.id 'input' %}" class="btn-download-link">⬇ Download as file</a>
+                                    {% endif %}
+                                </div>
+                                <div class="tc-col">
+                                    <strong>Your Output:</strong>
+                                    <div class="mutual-exclusive-group" style="margin-top: 0.5rem;">
+                                        <textarea name="solve_text_{{ tc.id }}" class="form-input me-textarea" rows="3" maxlength="2000" placeholder="Paste your output here (max 2000 chars)..." oninput="toggleME(this, 'textarea')"></textarea>
+                                        <div style="margin: 0.5rem 0; color: var(--text-muted); font-size: 0.85rem;">OR upload output file</div>
+                                        <label class="file-upload-btn me-file-btn">
+                                            <span>📁 Choose File</span>
+                                            <input type="file" name="solve_file_{{ tc.id }}" class="me-file" style="display: none;" onchange="toggleME(this, 'file'); this.parentElement.querySelector('span').textContent = '📁 ' + this.files[0].name">
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <button type="submit" class="btn-primary form-submit" style="margin-top: 1rem;">Submit Solution</button>
+                </form>
+                {% endif %}
+            {% endif %}
+        </div>
+        {% else %}
+        <div id="submit" class="hidden-tests-section" style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-color);">
+            <h3>Challenge Progress</h3>
+            {% if is_solved %}
+            <div style="background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; color: #10b981;">
+                ✅ You have completed this challenge! It is hidden from your main feed.
+            </div>
+            {% else %}
+                {% if request.session.session_key %}
+                <p style="color:var(--text-muted); margin-bottom: 1.5rem;">This challenge has no hidden test cases. If you've read through or solved it locally, you can mark it as completed to hide it from your feed.</p>
+                <form method="post" action="{% url 'challenge_mark_completed' challenge.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-primary form-submit">Mark as Completed</button>
+                </form>
+                {% else %}
+                <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; margin-bottom: 2rem; color: #93c5fd; font-size: 0.95rem;">
+                    ℹ️ You must <strong>Request a Session</strong> (in the top right) to mark challenges as completed.
+                </div>
+                {% endif %}
             {% endif %}
         </div>
         {% endif %}
@@ -208,7 +225,11 @@
         <h3>Community & Feedback</h3>
         
         {% if is_solved or show_spoilers %}
-            {% if not has_rated or not has_voted_diff %}
+            {% if not request.session.session_key %}
+            <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); padding: 1rem; border-radius: 8px; margin-bottom: 2rem; color: #93c5fd; font-size: 0.95rem;">
+                ℹ️ You must <strong>Request a Session</strong> to rate and vote on difficulty.
+            </div>
+            {% elif not has_rated or not has_voted_diff %}
             <div class="feedback-grid" style="display: grid; grid-template-columns: {% if not has_rated and not has_voted_diff %}1fr 1fr{% else %}1fr{% endif %}; gap: 2rem; margin-bottom: 2rem;">
                 {% if not has_rated %}
                 <div class="rating-box tc-data-box">
@@ -278,12 +299,18 @@
                     {% endfor %}
                 </div>
                 
+                {% if request.session.session_key %}
                 <form method="post" action="{% url 'challenge_comment' challenge.pk %}" style="margin-top: 1.5rem;">
                     {% csrf_token %}
                     <input type="text" name="nickname" class="form-input" placeholder="Your nickname (optional, default: Anonymous)" style="margin-bottom: 0.5rem;">
                     <textarea name="text" class="form-input" rows="3" placeholder="Add to the discussion... (Markdown & code blocks supported)" required></textarea>
                     <button type="submit" class="btn-primary mt-1">Post Comment</button>
                 </form>
+                {% else %}
+                <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(0,0,0,0.2); border-radius: 8px; text-align: center; color: var(--text-muted);">
+                    You must <strong>Request a Session</strong> to join the discussion.
+                </div>
+                {% endif %}
             </div>
             
         {% else %}

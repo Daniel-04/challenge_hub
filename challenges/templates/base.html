@@ -14,15 +14,176 @@
     <nav class="navbar">
         <div class="nav-container">
             <a href="{% url 'challenge_list' %}" class="brand">ChallengeHub</a>
-            <div class="nav-links">
+            <div class="nav-links" style="display:flex; align-items:center;">
                 <a href="{% url 'challenge_list' %}" class="nav-link">Home</a>
-                <a href="{% url 'challenge_upload' %}" class="nav-link btn-primary">Upload Challenge</a>
+                <a href="{% url 'challenge_upload' %}" class="nav-link btn-primary" style="margin-left:1rem;">Upload Challenge</a>
+                
+                {% if request.session.session_key %}
+                <div class="session-dropdown" style="position:relative; display:inline-block; margin-left: 1rem;">
+                    <button id="session-btn" class="nav-link btn-secondary" style="background: transparent; border: 1px solid var(--border-color); cursor:pointer;">Session Active ▾</button>
+                    <div id="session-menu" class="dropdown-content" style="display:none; position:absolute; right:0; top: 100%; margin-top: 5px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:0.5rem; z-index:100; min-width: 150px; text-align:left; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
+                        <a href="{% url 'session_export' %}" class="nav-link" style="display:block; padding: 0.5rem; color:var(--text); text-decoration:none;">Export Session</a>
+                    </div>
+                </div>
+                {% else %}
+                <button onclick="openSessionModal()" class="nav-link btn-secondary" style="margin-left: 1rem; cursor:pointer;">Request Session</button>
+                {% endif %}
             </div>
         </div>
     </nav>
     <main class="container">
+        {% if messages %}
+        <div class="messages" style="max-width: 800px; margin: 0 auto 1.5rem auto;">
+            {% for message in messages %}
+            <div class="alert {{ message.tags }}" style="padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem;
+                {% if message.tags == 'success' %}background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #10b981;{% else %}background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #f87171;{% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
         {% block content %}
         {% endblock %}
     </main>
+    
+    <!-- Modal for Session Request / Import -->
+    <div id="session-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000; align-items:center; justify-content:center;">
+        <div style="background:var(--bg-card); padding:2rem; border-radius:8px; border:1px solid var(--border-color); max-width:500px; width:90%; position:relative; z-index: 1001;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                <h2 style="margin:0;">Session Management</h2>
+                <button onclick="closeSessionModal()" style="background:none; border:none; color:white; font-size:1.5rem; cursor:pointer;">&times;</button>
+            </div>
+            <p style="color:var(--text-muted); margin-bottom:1.5rem;">A session is required to upload challenges, submit solutions, rate, and comment. Sessions are anonymous. To prevent spam, you must complete a small Proof of Work in your browser, or import an existing session.</p>
+            
+            <div id="tab-request" style="display:block; text-align:center;">
+                <div id="pow-status" style="margin-bottom:1rem; font-weight:600; color:#fbbf24;">Click below to establish a session.</div>
+                <button id="btn-start-pow" onclick="requestSession()" class="btn-primary" style="width:100%; font-size:1.1rem; padding: 0.8rem; margin-bottom:1rem;">Mine Proof of Work & Request</button>
+            </div>
+            
+            <hr style="border:1px solid var(--border-color); margin: 1.5rem 0;">
+            <p style="text-align:center; color: var(--text-muted); font-weight: 600; margin-bottom: 1rem;">OR</p>
+            
+            <div id="tab-import" style="display:block;">
+                <form method="post" action="{% url 'session_import' %}" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <label style="display:block; margin-bottom:0.5rem; font-weight:600;">Paste Session Key:</label>
+                    <input type="text" name="session_key_text" class="form-input" style="width:100%; margin-bottom:1rem;" placeholder="e.g. 8f7b...a912">
+                    <label style="display:block; margin-bottom:0.5rem; font-weight:600;">OR Upload Session File:</label>
+                    <input type="file" name="session_key_file" style="margin-bottom:1rem; display:block; width:100%;">
+                    <button type="submit" class="btn-primary" style="width:100%;">Import Session</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function openSessionModal() {
+            document.getElementById('session-modal').style.display = 'flex';
+        }
+        function closeSessionModal() {
+            document.getElementById('session-modal').style.display = 'none';
+            document.getElementById('pow-status').innerText = 'Click below to establish a session.';
+            document.getElementById('btn-start-pow').style.display = 'inline-block';
+            document.getElementById('btn-start-pow').disabled = false;
+        }
+        
+        const sessionBtn = document.getElementById('session-btn');
+        if (sessionBtn) {
+            sessionBtn.addEventListener('click', function(e) {
+                const menu = document.getElementById('session-menu');
+                menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                e.stopPropagation();
+            });
+        }
+        document.addEventListener('click', function() {
+            const menu = document.getElementById('session-menu');
+            if (menu) menu.style.display = 'none';
+        });
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);                    
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function solvePoW(salt, diff) {
+            const target = '0'.repeat(diff);
+            let nonce = 0;
+            while (true) {
+                let hash = await sha256(salt + nonce);
+                if (hash.startsWith(target)) {
+                    return nonce;
+                }
+                nonce++;
+                if (nonce % 2000 === 0) {
+                    await new Promise(r => setTimeout(r, 0)); // yield
+                }
+            }
+        }
+
+        async function requestSession() {
+            const btn = document.getElementById('btn-start-pow');
+            const status = document.getElementById('pow-status');
+            btn.disabled = true;
+            status.style.color = '#fbbf24';
+            status.innerText = 'Requesting challenge...';
+            
+            try {
+                let res = await fetch("{% url 'session_pow_challenge' %}");
+                let data = await res.json();
+                
+                status.innerText = 'Running Proof of Work (this may take a moment)...';
+                let nonce = await solvePoW(data.salt, data.diff);
+                
+                status.innerText = 'Submitting Proof...';
+                
+                let formData = new URLSearchParams();
+                formData.append('token', data.token);
+                formData.append('nonce', nonce);
+                
+                let solveRes = await fetch("{% url 'session_pow_solve' %}", {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': getCookie('csrftoken'),
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData.toString()
+                });
+                
+                if (solveRes.ok) {
+                    status.style.color = '#10b981';
+                    status.innerText = 'Session established! Reloading...';
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    let errData = await solveRes.json();
+                    status.style.color = '#ef4444';
+                    status.innerText = 'Error: ' + (errData.error || 'Unknown error');
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                status.style.color = '#ef4444';
+                status.innerText = 'Network error occurred.';
+                console.error(err);
+                btn.disabled = false;
+            }
+        }
+    </script>
 </body>
 </html>

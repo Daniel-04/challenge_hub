@@ -11,10 +11,14 @@
 
     <div class="list-controls" style="background: rgba(0,0,0,0.2); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 2rem;">
         <form method="get" action="" id="filterForm">
-            <!-- Search Bar -->
-            <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+            <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: stretch;">
                 <input type="text" name="q" value="{{ search_q }}" class="form-input" placeholder="🔍 Search challenges by name..." style="flex: 1;">
                 <button type="submit" class="btn-primary" style="padding: 0.6rem 1.5rem;">Search</button>
+                {% if request.session.session_key %}
+                <button type="submit" name="show_completed" value="{% if show_completed %}{% else %}1{% endif %}" class="btn-secondary" style="padding: 0.6rem 1.5rem;">
+                    {% if show_completed %}❌ Hide Completed{% else %}✅ Show Completed{% endif %}
+                </button>
+                {% endif %}
             </div>
             
             <!-- Sort + Filter Row -->
