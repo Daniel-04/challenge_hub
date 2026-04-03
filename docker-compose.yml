@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   moderation-api:
     build:
@@ -10,6 +8,12 @@ services:
     environment:
       - THRESHOLD_PASS=0.70
       - THRESHOLD_DELETE=0.70
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
 
   challenge-hub:
     build:
@@ -20,4 +24,5 @@ services:
     environment:
       - MODERATION_API_URL=http://moderation-api:8000/moderate
     depends_on:
-      - moderation-api
+      moderation-api:
+        condition: service_healthy
