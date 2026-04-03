@@ -4,10 +4,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-MODERATION_URL = os.environ.get("MODERATION_API_URL", "http://127.0.0.1:8000/moderate")
+MODERATION_URL = os.environ.get("MODERATION_API_URL", "")
 
 
 def check_moderation(text: str, topic_context: str = None) -> dict:
+    if not MODERATION_URL:
+        # Moderation is disabled; default to pass
+        return {
+            "status": "pass",
+            "similarity_score": None,
+            "classification_score": None,
+        }
+
     payload = {"message": text}
     if topic_context:
         payload["topic_context"] = topic_context
